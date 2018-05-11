@@ -100,11 +100,26 @@ static void print_dmabuf_formats(struct wlr_egl *egl) {
 	free(formats);
 }
 
+static const EGLint default_config_attribs[] =
+{
+	EGL_RED_SIZE, 1,
+	EGL_GREEN_SIZE, 1,
+	EGL_BLUE_SIZE, 1,
+	EGL_ALPHA_SIZE, 1,
+    EGL_DEPTH_SIZE, 1,
+	EGL_NONE
+};
+
 bool wlr_egl_init(struct wlr_egl *egl, EGLenum platform, void *remote_display,
 		EGLint *config_attribs, EGLint visual_id) {
 	if (!load_glapi()) {
 		return false;
 	}
+
+    if (!config_attribs)
+    {
+        config_attribs = (EGLint*)default_config_attribs;
+    }
 
 	if (eglDebugMessageControlKHR) {
 		static const EGLAttrib debug_attribs[] = {
