@@ -462,7 +462,8 @@ static void surface_commit(struct wl_client *client,
 		struct wl_resource *resource) {
 	struct wlr_surface *surface = wlr_surface_from_resource(resource);
 
-	if (wlr_surface_is_subsurface(surface)) {
+	if (wlr_surface_is_subsurface(surface) &&
+			wlr_subsurface_from_wlr_surface(surface)) {
 		struct wlr_subsurface *subsurface =
 			wlr_subsurface_from_wlr_surface(surface);
 		subsurface_commit(subsurface);
