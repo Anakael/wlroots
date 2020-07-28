@@ -39,6 +39,10 @@ struct wlr_workspace_group_handle_v1 {
 
 	struct wlr_workspace_manager_v1 *manager;
 
+	struct {
+		struct wl_signal destroy;
+	} events;
+
 	void *data;
 };
 
@@ -70,6 +74,10 @@ struct wlr_workspace_handle_v1 {
 	char *name;
 	struct wl_array coordinates;
 
+	struct {
+		struct wl_signal destroy;
+	} events;
+
 	void *data;
 };
 
@@ -80,12 +88,21 @@ struct wlr_workspace_group_handle_v1 *wlr_workspace_group_handle_v1_create(
 		struct wlr_workspace_manager_v1 *manager);
 
 /**
+ * Destroy the workspace group and all workspaces inside it.
+ */
+void wlr_workspace_group_handle_v1_destroy(
+	struct wlr_workspace_group_handle_v1 *group);
+
+/**
  * Create a new workspace in the workspace group.
  * Note that the compositor must set the workspace name immediately after
  * creating it.
  */
 struct wlr_workspace_handle_v1 *wlr_workspace_handle_v1_create(
 		struct wlr_workspace_group_handle_v1 *group);
+
+void wlr_workspace_handle_v1_destroy(
+	struct wlr_workspace_handle_v1 *workspace);
 
 void wlr_workspace_group_handle_v1_output_enter(
 		struct wlr_workspace_group_handle_v1 *group, struct wlr_output *output);

@@ -144,6 +144,25 @@
       </description>
       <arg name="workspace" type="new_id" interface="zwlr_workspace_handle_v1"/>
     </event>
+
+    <event name="remove">
+      <description summary="this workspace group has been destroyed">
+		This event means the zwlr_workspace_group_handle_v1 has been destroyed.
+		It is guaranteed there won't be any more events for this
+		zwlr_workspace_group_handle_v1. The zwlr_workspace_group_handle_v1 becomes
+		inert so any requests will be ignored except the destroy request.
+      </description>
+    </event>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the zwlr_workspace_handle_v1 object">
+        Destroys the zwlr_workspace_handle_v1 object.
+
+        This request should be called either when the client does not want to
+        use the workspace object any more or after the remove event to finalize
+        the destruction of the object.
+      </description>
+    </request>
   </interface>
 
   <interface name="zwlr_workspace_handle_v1" version="1">
@@ -175,7 +194,8 @@
         conceptually arrange workspaces in this way. If compositors simply
         number workspaces, without any geometric interpretation, they may send
         1D coordinates, which clients should not interpret as implying any
-        geometry.
+		geometry. Sending an empty array means that the compositor no longer
+		orders the workspace geometrically.
 
         Coordinates have an arbitrary number of dimensions N with an uint32
         position along each dimension. By convention if N > 1, the first
