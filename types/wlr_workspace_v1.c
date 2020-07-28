@@ -62,6 +62,97 @@ static const struct zwlr_workspace_handle_v1_interface workspace_handle_impl = {
 	.deactivate = workspace_handle_deactivate,
 };
 
+void wlr_workspace_handle_v1_set_name(struct wlr_workspace_handle_v1 *workspace,
+		const char* name) {
+	workspace->name = strdup(name);
+
+	struct wl_resource *tmp, *resource;
+	wl_resource_for_each_safe(resource, tmp, &workspace->resources) {
+		zwlr_workspace_handle_v1_send_name(resource, name);
+	}
+
+	workspace_manager_update_idle_source(workspace->group->manager);
+}
+
+void wlr_workspace_handle_v1_set_coordinates(
+		struct wlr_workspace_handle_v1 *workspace, struct wl_array *coordinates) {
+	wl_array_copy(&workspace->coordinates, coordinates);
+
+	struct wl_resource *tmp, *resource;
+	wl_resource_for_each_safe(resource, tmp, &workspace->resources) {
+		zwlr_workspace_handle_v1_send_coordinates(resource, coordinates);
+	}
+
+	workspace_manager_update_idle_source(workspace->group->manager);
+}
+
+static bool fill_array_from_workspace_state(struct wl_array *array,
+		uint32_t state) {
+	if (state & WLR_WORKSPACE_HANDLE_V1_STATE_ACTIVE) {
+		uint32_t *index = wl_array_add(array, sizeof(uint32_t));
+		if (index == NULL) {
+			return false;
+		}
+		*index = ZWLR_WORKSPACE_HANDLE_V1_STATE_ACTIVE;
+	}
+
+	return true;
+}
+
+void wlr_workspace_handle_v1_set_active(
+		struct wlr_workspace_handle_v1 *workspace, bool activate) {
+	if (activate) {
+		workspace->server_state |= WLR_WORKSPACE_HANDLE_V1_STATE_ACTIVE;
+	} else {
+		workspace->server_state &= ~WLR_WORKSPACE_HANDLE_V1_STATE_ACTIVE;
+	}
+
+	struct wl_array state;
+	wl_array_init(&state);
+
+	if (!fill_array_from_workspace_state(&state, workspace->server_state)) {
+		struct wl_resource *resource;
+		wl_resource_for_each(resource, &workspace->resources) {
+			wl_resource_post_no_memory(resource);
+		}
+
+		wl_array_release(&state);
+		return;
+	}
+
+	struct wl_resource *tmp, *resource;
+	wl_resource_for_each_safe(resource, tmp, &workspace->resources) {
+		zwlr_workspace_handle_v1_send_state(resource, &state);
+	}
+
+	wl_array_release(&state);
+	workspace_manager_update_idle_source(workspace->group->manager);
+}
+
+static void workspace_send_details_to_resource(
+		struct wlr_workspace_handle_v1 *workspace,
+		struct wl_resource *resource) {
+
+	if (workspace->name) {
+		zwlr_workspace_handle_v1_send_name(resource, workspace->name);
+	}
+
+	if (workspace->coordinates.size > 0) {
+		zwlr_workspace_handle_v1_send_coordinates(resource,
+			&workspace->coordinates);
+	}
+
+	struct wl_array state;
+	wl_array_init(&state);
+	if (!fill_array_from_workspace_state(&state, workspace->server_state)) {
+		wl_resource_post_no_memory(resource);
+		wl_array_release(&state);
+		return;
+	}
+
+	zwlr_workspace_handle_v1_send_state(resource, &state);
+}
+
 static struct wl_resource *create_workspace_resource_for_group_resource(
 		struct wlr_workspace_handle_v1 *workspace,
 		struct wl_resource *group_resource) {
@@ -80,12 +171,27 @@ static struct wl_resource *create_workspace_resource_for_group_resource(
 
 	wl_list_insert(&workspace->resources, wl_resource_get_link(resource));
 	zwlr_workspace_group_handle_v1_send_workspace(group_resource, resource);
+	workspace_send_details_to_resource(workspace, resource);
 
 	return resource;
 }
 
+struct wlr_workspace_handle_v1 *wlr_workspace_handle_v1_create(
+		struct wlr_workspace_group_handle_v1 *group) {
+	struct wlr_workspace_handle_v1 *workspace = calloc(1,
+			sizeof(struct wlr_workspace_handle_v1));
+	if (!workspace) {
+		return NULL;
+	}
+
+	workspace->group = group;
+	wl_array_init(&workspace->coordinates);
+	wl_list_init(&workspace->resources);
+
+	return workspace;
+}
+
 static void workspace_group_resource_destroy(struct wl_resource *resource) {
-	// TODO: check
 	wl_list_remove(wl_resource_get_link(resource));
 }
 
@@ -207,6 +313,34 @@ void wlr_workspace_group_handle_v1_output_leave(
 	}
 }
 
+static void group_send_details_to_resource(
+		struct wlr_workspace_group_handle_v1 *group,
+		struct wl_resource *resource) {
+	struct wlr_workspace_group_handle_v1_output *output;
+	wl_list_for_each(output, &group->outputs, link) {
+		send_output_to_group_resource(resource, output->output, true);
+	}
+}
+
+struct wlr_workspace_group_handle_v1 *wlr_workspace_group_handle_v1_create(
+		struct wlr_workspace_manager_v1 *manager) {
+
+	struct wlr_workspace_group_handle_v1 *group = calloc(1,
+			sizeof(struct wlr_workspace_group_handle_v1));
+	if (!group) {
+		return NULL;
+	}
+
+	group->manager = manager;
+	wl_list_insert(&manager->groups, &group->link);
+
+	wl_list_init(&group->outputs);
+	wl_list_init(&group->resources);
+	wl_list_init(&group->workspaces);
+
+	return group;
+}
+
 static void workspace_manager_commit(struct wl_client *client,
 		struct wl_resource *resource) {
 	// TODO
@@ -217,15 +351,6 @@ static void workspace_manager_stop(struct wl_client *client,
 	// TODO
 }
 
-static void group_send_details_to_resource(
-		struct wlr_workspace_group_handle_v1 *group,
-		struct wl_resource *resource) {
-	struct wlr_workspace_group_handle_v1_output *output;
-	wl_list_for_each(output, &group->outputs, link) {
-		send_output_to_group_resource(resource, output->output, true);
-	}
-}
-
 static const struct zwlr_workspace_manager_v1_interface
 		workspace_manager_impl = {
 	.commit = workspace_manager_commit,
@@ -233,7 +358,7 @@ static const struct zwlr_workspace_manager_v1_interface
 };
 
 static void workspace_manager_resource_destroy( struct wl_resource *resource) {
-	// TODO
+	wl_list_remove(wl_resource_get_link(resource));
 }
 
 static void workspace_manager_bind(struct wl_client *client, void *data,
@@ -251,7 +376,7 @@ static void workspace_manager_bind(struct wl_client *client, void *data,
 	wl_list_insert(&manager->resources, wl_resource_get_link(resource));
 
 	struct wlr_workspace_group_handle_v1 *group, *tmp;
-	wl_list_for_each_safe(group, tmp, &manager->workspace_group_handles, link) {
+	wl_list_for_each_safe(group, tmp, &manager->groups, link) {
 		struct wl_resource *group_resource =
 			create_workspace_group_resource_for_resource(group, resource);
 		group_send_details_to_resource(group, group_resource);
@@ -288,7 +413,7 @@ struct wlr_workspace_manager_v1 *wlr_workspace_manager_v1_create(
 
 	wl_signal_init(&manager->events.destroy);
 	wl_list_init(&manager->resources);
-	wl_list_init(&manager->workspace_group_handles);
+	wl_list_init(&manager->groups);
 
 	manager->display_destroy.notify = handle_display_destroy;
 	wl_display_add_destroy_listener(display, &manager->display_destroy);

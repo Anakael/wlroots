@@ -18,7 +18,7 @@ struct wlr_workspace_manager_v1 {
 
 	struct wl_global *global;
 	struct wl_list resources; // wl_resource_get_link
-	struct wl_list workspace_group_handles; // wlr_workspace_group_handle_v1::link
+	struct wl_list groups; // wlr_workspace_group_handle_v1::link
 
 	struct wl_listener display_destroy;
 
@@ -31,11 +31,13 @@ struct wlr_workspace_manager_v1 {
 };
 
 struct wlr_workspace_group_handle_v1 {
-	struct wl_list link; // wlr_workspace_manager_v1::workspace_group_handles
+	struct wl_list link; // wlr_workspace_manager_v1::groups
 	struct wl_list resources; // wl_resource_get_link
 
 	struct wl_list workspaces; // wlr_workspace_handle_v1::link
 	struct wl_list outputs; // wlr_workspace_group_handle_v1_output::link
+
+	struct wlr_workspace_manager_v1 *manager;
 
 	void *data;
 };
@@ -48,25 +50,22 @@ struct wlr_workspace_group_handle_v1_output {
 	struct wlr_workspace_group_handle_v1 *group_handle;
 };
 
-enum wlr_workspace_handle_v1_state_field
+enum wlr_workspace_handle_v1_state
 {
-	WLR_WORKSPACE_HANDLE_V1_STATE_ACTIVATED = 1 << 0,
-};
-
-struct wlr_workspace_handle_v1_state {
-	enum wlr_workspace_handle_v1_state_field committed;
-	bool activated;
+	WLR_WORKSPACE_HANDLE_V1_STATE_ACTIVE = 1 << 0,
 };
 
 struct wlr_workspace_handle_v1 {
 	struct wl_list link; // wlr_workspace_group_handle_v1::workspaces
 	struct wl_list resources;
 
+	struct wlr_workspace_group_handle_v1 *group;
+
 	// request from the client
-	struct wlr_workspace_handle_v1_state pending, current;
+	uint32_t pending, current;
 
 	// set by the compositor
-	struct wlr_workspace_handle_v1_state server_state;
+	uint32_t server_state;
 
 	char *name;
 	struct wl_array coordinates;
@@ -80,8 +79,13 @@ struct wlr_workspace_manager_v1 *wlr_workspace_manager_v1_create(
 struct wlr_workspace_group_handle_v1 *wlr_workspace_group_handle_v1_create(
 		struct wlr_workspace_manager_v1 *manager);
 
-struct wlr_workspace_group_handle_v1 *wlr_workspace_handle_v1_create(
-		struct wlr_workspace_group_handle_v1 *workspace_group_handle);
+/**
+ * Create a new workspace in the workspace group.
+ * Note that the compositor must set the workspace name immediately after
+ * creating it.
+ */
+struct wlr_workspace_handle_v1 *wlr_workspace_handle_v1_create(
+		struct wlr_workspace_group_handle_v1 *group);
 
 void wlr_workspace_group_handle_v1_output_enter(
 		struct wlr_workspace_group_handle_v1 *group, struct wlr_output *output);
@@ -93,10 +97,9 @@ void wlr_workspace_handle_v1_set_name(struct wlr_workspace_handle_v1 *workspace,
 		const char* name);
 
 void wlr_workspace_handle_v1_set_coordinates(
-		struct wlr_workspace_handle_v1 *workspace, struct wl_array coordinates);
+		struct wlr_workspace_handle_v1 *workspace, struct wl_array *coordinates);
 
-void wlr_workspace_handle_v1_set_state(
-		struct wlr_workspace_handle_v1 *workspace,
-		const struct wlr_workspace_handle_v1_state state);
+void wlr_workspace_handle_v1_set_active(
+		struct wlr_workspace_handle_v1 *workspace, bool active);
 
 #endif
