@@ -14,6 +14,8 @@
 
 struct wlr_workspace_manager_v1 {
 	struct wl_event_loop *event_loop;
+	struct wl_event_source *idle_source;
+
 	struct wl_global *global;
 	struct wl_list resources; // wl_resource_get_link
 	struct wl_list workspace_group_handles; // wlr_workspace_group_handle_v1::link
@@ -35,8 +37,6 @@ struct wlr_workspace_group_handle_v1 {
 	struct wl_list workspaces; // wlr_workspace_handle_v1::link
 	struct wl_list outputs; // wlr_workspace_group_handle_v1_output::link
 
-	struct wl_event_source *idle_source;
-
 	void *data;
 };
 
@@ -45,7 +45,7 @@ struct wlr_workspace_group_handle_v1_output {
 	struct wl_listener output_destroy;
 	struct wlr_output *output;
 
-	struct wlr_workspace_group_handle_v1 *workspace_group_handle;
+	struct wlr_workspace_group_handle_v1 *group_handle;
 };
 
 enum wlr_workspace_handle_v1_state_field
@@ -75,28 +75,28 @@ struct wlr_workspace_handle_v1 {
 };
 
 struct wlr_workspace_manager_v1 *wlr_workspace_manager_v1_create(
-	struct wl_display *display);
+		struct wl_display *display);
 
 struct wlr_workspace_group_handle_v1 *wlr_workspace_group_handle_v1_create(
-	struct wlr_workspace_manager_v1 *manager);
+		struct wlr_workspace_manager_v1 *manager);
 
 struct wlr_workspace_group_handle_v1 *wlr_workspace_handle_v1_create(
-	struct wlr_workspace_group_handle_v1 *workspace_group_handle);
+		struct wlr_workspace_group_handle_v1 *workspace_group_handle);
 
 void wlr_workspace_group_handle_v1_output_enter(
-	struct wlr_workspace_manager_v1 *manager, struct wlr_output *output);
+		struct wlr_workspace_group_handle_v1 *group, struct wlr_output *output);
 
 void wlr_workspace_group_handle_v1_output_leave(
-	struct wlr_workspace_manager_v1 *manager, struct wlr_output *output);
+		struct wlr_workspace_group_handle_v1 *group, struct wlr_output *output);
 
 void wlr_workspace_handle_v1_set_name(struct wlr_workspace_handle_v1 *workspace,
-	const char* name);
+		const char* name);
 
 void wlr_workspace_handle_v1_set_coordinates(
-	struct wlr_workspace_handle_v1 *workspace, struct wl_array coordinates);
+		struct wlr_workspace_handle_v1 *workspace, struct wl_array coordinates);
 
 void wlr_workspace_handle_v1_set_state(
-	struct wlr_workspace_handle_v1 *workspace,
-	const struct wlr_workspace_handle_v1_state state);
+		struct wlr_workspace_handle_v1 *workspace,
+		const struct wlr_workspace_handle_v1_state state);
 
 #endif

@@ -12,6 +12,26 @@
 
 #define WORKSPACE_V1_VERSION 1
 
+static void workspace_manager_idle_send_done(void *data) {
+	struct wlr_workspace_manager_v1 *manager = data;
+	struct wl_resource *resource, *tmp;
+	wl_resource_for_each_safe(resource, tmp, &manager->resources) {
+		zwlr_workspace_manager_v1_send_done(resource);
+	}
+
+	manager->idle_source = NULL;
+}
+
+static void workspace_manager_update_idle_source(
+		struct wlr_workspace_manager_v1 *manager) {
+	if (manager->idle_source) {
+		return;
+	}
+
+	manager->idle_source = wl_event_loop_add_idle(manager->event_loop,
+			workspace_manager_idle_send_done, manager);
+}
+
 static void workspace_handle_destroy(struct wl_client *client,
 		struct wl_resource *resource) {
 	// TODO
@@ -93,11 +113,98 @@ static struct wl_resource *create_workspace_group_resource_for_resource(
 
 	struct wlr_workspace_handle_v1 *tmp, *workspace;
 	wl_list_for_each_safe(workspace, tmp, &group->workspaces, link) {
-		// TODO create resource
-		// TODO send details
+		struct wl_resource *workspace_resource =
+			create_workspace_resource_for_group_resource(workspace, resource);
+		workspace_handle_send_state_to_resource(workspace, workspace_resource);
 	}
 
 	return resource;
+}
+
+static void send_output_to_group_resource(struct wl_resource *group_resource,
+		struct wlr_output *output, bool enter) {
+	struct wl_client *client = wl_resource_get_client(group_resource);
+	struct wl_resource *output_resource, *tmp;
+
+	wl_resource_for_each_safe(output_resource, tmp, &output->resources) {
+		if (wl_resource_get_client(output_resource) == client) {
+			if (enter) {
+				zwlr_workspace_group_handle_v1_send_output_enter(group_resource,
+					output_resource);
+			} else {
+				zwlr_workspace_group_handle_v1_send_output_leave(group_resource,
+					output_resource);
+			}
+		}
+	}
+}
+
+static void group_send_output(struct wlr_workspace_group_handle_v1 *group,
+		struct wlr_output *output, bool enter) {
+	struct wl_resource *resource, *tmp;
+	wl_resource_for_each_safe(resource, tmp, &group->resources) {
+		send_output_to_group_resource(resource, output, enter);
+	}
+}
+
+static void toplevel_handle_output_destroy(struct wl_listener *listener,
+		void *data) {
+	struct wlr_workspace_group_handle_v1_output *output =
+		wl_container_of(listener, output, output_destroy);
+	wlr_workspace_group_handle_v1_output_leave(output->group_handle,
+		output->output);
+}
+
+void wlr_workspace_group_handle_v1_output_enter(
+		struct wlr_workspace_group_handle_v1 *group, struct wlr_output *output) {
+	struct wlr_workspace_group_handle_v1_output *group_output;
+	wl_list_for_each(group_output, &group->outputs, link) {
+		if (group_output->output == output) {
+			return; // we have already sent output_enter event
+		}
+	}
+
+	group_output = calloc(1, sizeof(struct wlr_workspace_group_handle_v1_output));
+	if (!group_output) {
+		wlr_log(WLR_ERROR, "failed to allocate memory for toplevel output");
+		return;
+	}
+
+	group_output->output = output;
+	group_output->group_handle = group;
+	wl_list_insert(&group->outputs, &group_output->link);
+
+	group_output->output_destroy.notify = toplevel_handle_output_destroy;
+	wl_signal_add(&output->events.destroy, &group_output->output_destroy);
+
+	group_send_output(group, output, true);
+}
+
+static void group_output_destroy(
+		struct wlr_workspace_group_handle_v1_output *output) {
+	wl_list_remove(&output->link);
+	wl_list_remove(&output->output_destroy.link);
+	free(output);
+}
+
+void wlr_workspace_group_handle_v1_output_leave(
+		struct wlr_workspace_group_handle_v1 *group, struct wlr_output *output) {
+	struct wlr_workspace_group_handle_v1_output *group_output_iterator;
+	struct wlr_workspace_group_handle_v1_output *group_output = NULL;
+
+	wl_list_for_each(group_output_iterator, &group->outputs, link) {
+		if (group_output_iterator->output == output) {
+			group_output = group_output_iterator;
+			break;
+		}
+	}
+
+	if (group_output) {
+		group_send_output(group, output, false);
+		group_output_destroy(group_output);
+	} else {
+		// XXX: log an error? crash?
+	}
 }
 
 static void workspace_manager_commit(struct wl_client *client,
@@ -113,7 +220,10 @@ static void workspace_manager_stop(struct wl_client *client,
 static void group_send_details_to_resource(
 		struct wlr_workspace_group_handle_v1 *group,
 		struct wl_resource *resource) {
-	// TODO send outputs
+	struct wlr_workspace_group_handle_v1_output *output;
+	wl_list_for_each(output, &group->outputs, link) {
+		send_output_to_group_resource(resource, output->output, true);
+	}
 }
 
 static const struct zwlr_workspace_manager_v1_interface
