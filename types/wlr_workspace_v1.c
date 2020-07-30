@@ -201,7 +201,10 @@ struct wlr_workspace_handle_v1 *wlr_workspace_handle_v1_create(
 	wl_list_init(&workspace->resources);
 	wl_signal_init(&workspace->events.destroy);
 
-	// TODO: create resources for already bound toplevels
+	struct wl_resource *tmp, *group_resource;
+	wl_resource_for_each_safe(group_resource, tmp, &group->resources) {
+		create_workspace_resource_for_group_resource(workspace, group_resource);
+	}
 
 	return workspace;
 }
@@ -213,6 +216,8 @@ void wlr_workspace_handle_v1_destroy(
 	}
 
 	wlr_signal_emit_safe(&workspace->events.destroy, workspace);
+
+	workspace_manager_update_idle_source(workspace->group->manager);
 
 	struct wl_resource *tmp, *resource;
 	wl_resource_for_each_safe(resource, tmp, &workspace->resources) {
@@ -227,6 +232,15 @@ void wlr_workspace_handle_v1_destroy(
 	wl_list_remove(&workspace->link);
 	free(workspace->name);
 }
+
+static void workspace_group_handle_handle_destroy(struct wl_client *client,
+		struct wl_resource *resource) {
+	wl_resource_destroy(resource);
+}
+
+const struct zwlr_workspace_group_handle_v1_interface workspace_group_impl = {
+	.destroy = workspace_group_handle_handle_destroy,
+};
 
 static void workspace_group_resource_destroy(struct wl_resource *resource) {
 	wl_list_remove(wl_resource_get_link(resource));
@@ -247,8 +261,7 @@ static struct wl_resource *create_workspace_group_resource_for_resource(
 		return NULL;
 	}
 
-	// TODO: is NULL good enough for impl, as there are no requests?
-	wl_resource_set_implementation(resource, NULL, group,
+	wl_resource_set_implementation(resource, &workspace_group_impl, group,
 			workspace_group_resource_destroy);
 
 	wl_list_insert(&group->resources, wl_resource_get_link(resource));
@@ -376,45 +389,82 @@ struct wlr_workspace_group_handle_v1 *wlr_workspace_group_handle_v1_create(
 	wl_list_init(&group->workspaces);
 	wl_signal_init(&group->events.destroy);
 
-	// TODO create resources for already bound toplevels
+	struct wl_resource *tmp, *manager_resource;
+	wl_resource_for_each_safe(manager_resource, tmp, &manager->resources) {
+		create_workspace_group_resource_for_resource(group, manager_resource);
+	}
 
 	return group;
 }
 
 void wlr_workspace_group_handle_v1_destroy(
 		struct wlr_workspace_group_handle_v1 *group) {
-	// TODO: fix
 	if (!group) {
 		return;
 	}
 
-	wlr_signal_emit_safe(&group->events.destroy, group);
+	struct wlr_workspace_handle_v1 *workspace, *tmp;
+	wl_list_for_each_safe(workspace, tmp, &group->workspaces, link) {
+		wlr_workspace_handle_v1_destroy(workspace);
+	}
 
-	struct wl_resource *tmp, *resource;
-	wl_resource_for_each_safe(resource, tmp, &group->resources) {
+	wlr_signal_emit_safe(&group->events.destroy, group);
+	workspace_manager_update_idle_source(group->manager);
+
+	struct wlr_workspace_group_handle_v1_output *output, *tmp2;
+	wl_list_for_each_safe(output, tmp2, &group->outputs, link) {
+		group_output_destroy(output);
+	}
+
+	struct wl_resource *tmp3, *resource;
+	wl_resource_for_each_safe(resource, tmp3, &group->resources) {
 		zwlr_workspace_group_handle_v1_send_remove(resource);
-		zwlrworkspacegroupsendremo
-		zwlr_workspace_handle_v1_send_remove(resource);
 
 		wl_resource_set_user_data(resource, NULL);
 		wl_list_remove(&resource->link);
 		wl_list_init(&resource->link);
 	}
 
-	wl_array_release(&workspace->coordinates);
-	wl_list_remove(&workspace->link);
-	free(workspace->name);
+	free(group);
+}
+
+static const struct zwlr_workspace_manager_v1_interface workspace_manager_impl;
+
+static struct wlr_workspace_manager_v1 *manager_from_resource(
+		struct wl_resource *resource) {
+	assert(wl_resource_instance_of(resource,
+			&zwlr_workspace_manager_v1_interface,
+			&workspace_manager_impl));
+	return wl_resource_get_user_data(resource);
 }
 
 static void workspace_manager_commit(struct wl_client *client,
 		struct wl_resource *resource) {
+	struct wlr_workspace_manager_v1 *manager = manager_from_resource(resource);
+	if (!manager) {
+		return;
+	}
 
-	// TODO
+	struct wlr_workspace_group_handle_v1 *group;
+	struct wlr_workspace_handle_v1 *workspace;
+	wl_list_for_each(group, &manager->groups, link) {
+		wl_list_for_each(workspace, &group->workspaces, link) {
+			workspace->current = workspace->pending;
+		}
+	}
+
+	wlr_signal_emit_safe(&manager->events.commit, manager);
 }
 
 static void workspace_manager_stop(struct wl_client *client,
 		     struct wl_resource *resource) {
-	// TODO
+	struct wlr_workspace_manager_v1 *manager = manager_from_resource(resource);
+	if (!manager) {
+		return;
+	}
+
+	zwlr_workspace_manager_v1_send_finished(resource);
+	wl_resource_destroy(resource);
 }
 
 static const struct zwlr_workspace_manager_v1_interface
@@ -452,9 +502,11 @@ static void workspace_manager_bind(struct wl_client *client, void *data,
 static void handle_display_destroy(struct wl_listener *listener, void *data) {
 	struct wlr_workspace_manager_v1 *manager =
 		wl_container_of(listener, manager, display_destroy);
+
 	wlr_signal_emit_safe(&manager->events.destroy, manager);
 	wl_list_remove(&manager->display_destroy.link);
 	wl_global_destroy(manager->global);
+
 	free(manager);
 }
 

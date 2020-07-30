@@ -151,6 +151,9 @@
 		It is guaranteed there won't be any more events for this
 		zwlr_workspace_group_handle_v1. The zwlr_workspace_group_handle_v1 becomes
 		inert so any requests will be ignored except the destroy request.
+
+		The compositor must remove all workspaces belonging to a workspace group
+		before removing the workspace group.
       </description>
     </event>
 
