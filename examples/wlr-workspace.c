@@ -31,15 +31,15 @@ struct workspace_state {
 
 static void copy_state(struct workspace_state *current,
 		struct workspace_state *pending) {
-	if (current->name && pending->name) {
-		free(current->name);
-	}
 
 	current->state = pending->state;
 	wl_array_copy(&current->coordinates, &pending->coordinates);
 
-	current->name = pending->name;
-	pending->name = NULL;
+	if (pending->name) {
+		free(current->name);
+		current->name = pending->name;
+		pending->name = NULL;
+	}
 }
 
 struct workspace_v1 {
@@ -309,8 +309,6 @@ int main(int argc, char **argv) {
 	}
 	wl_display_roundtrip(display); // load workspace groups
 	wl_display_roundtrip(display); // load details
-	wl_display_roundtrip(display); // load details
-	wl_display_roundtrip(display); // load details
 
 	if (focus_name != NULL) {
 		struct workspace_v1 *focus = workspace_by_name_or_bail(focus_name);
@@ -325,6 +323,7 @@ int main(int argc, char **argv) {
 			}
 		}
 		zwlr_workspace_handle_v1_activate(focus->handle);
+		zwlr_workspace_manager_v1_commit(workspace_manager);
 	}
 
 	wl_display_flush(display);
