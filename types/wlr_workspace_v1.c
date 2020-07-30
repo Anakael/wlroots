@@ -197,6 +197,7 @@ struct wlr_workspace_handle_v1 *wlr_workspace_handle_v1_create(
 	}
 
 	workspace->group = group;
+	wl_list_insert(&group->workspaces, &workspace->link);
 	wl_array_init(&workspace->coordinates);
 	wl_list_init(&workspace->resources);
 	wl_signal_init(&workspace->events.destroy);
@@ -322,7 +323,7 @@ void wlr_workspace_group_handle_v1_output_enter(
 
 	group_output = calloc(1, sizeof(struct wlr_workspace_group_handle_v1_output));
 	if (!group_output) {
-		wlr_log(WLR_ERROR, "failed to allocate memory for toplevel output");
+		wlr_log(WLR_ERROR, "failed to allocate memory for workspace output");
 		return;
 	}
 
@@ -497,6 +498,8 @@ static void workspace_manager_bind(struct wl_client *client, void *data,
 			create_workspace_group_resource_for_resource(group, resource);
 		group_send_details_to_resource(group, group_resource);
 	}
+
+	zwlr_workspace_manager_v1_send_done(resource);
 }
 
 static void handle_display_destroy(struct wl_listener *listener, void *data) {
