@@ -83,7 +83,7 @@ static bool fill_array_from_workspace_state(struct wl_array *array,
 	return true;
 }
 
-static void workspace_handle_send_state_to_resource(
+static void workspace_handle_send_details_to_resource(
 		struct wlr_workspace_handle_v1 *workspace, struct wl_resource *resource) {
 	if (workspace->name) {
 		zwlr_workspace_handle_v1_send_name(resource, workspace->name);
@@ -272,7 +272,7 @@ static struct wl_resource *create_workspace_group_resource_for_resource(
 	wl_list_for_each_safe(workspace, tmp, &group->workspaces, link) {
 		struct wl_resource *workspace_resource =
 			create_workspace_resource_for_group_resource(workspace, resource);
-		workspace_handle_send_state_to_resource(workspace, workspace_resource);
+		workspace_handle_send_details_to_resource(workspace, workspace_resource);
 	}
 
 	return resource;
@@ -304,7 +304,7 @@ static void group_send_output(struct wlr_workspace_group_handle_v1 *group,
 	}
 }
 
-static void toplevel_handle_output_destroy(struct wl_listener *listener,
+static void workspace_handle_output_destroy(struct wl_listener *listener,
 		void *data) {
 	struct wlr_workspace_group_handle_v1_output *output =
 		wl_container_of(listener, output, output_destroy);
@@ -331,7 +331,7 @@ void wlr_workspace_group_handle_v1_output_enter(
 	group_output->group_handle = group;
 	wl_list_insert(&group->outputs, &group_output->link);
 
-	group_output->output_destroy.notify = toplevel_handle_output_destroy;
+	group_output->output_destroy.notify = workspace_handle_output_destroy;
 	wl_signal_add(&output->events.destroy, &group_output->output_destroy);
 
 	group_send_output(group, output, true);
